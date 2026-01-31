@@ -59,6 +59,7 @@ Docs/
 ---
 
 ## 最短起動手順（開発者向け）
+※FinalIKがインポートされていることが前提
 
 1. SteamVR を起動  
 2. Ultimate Tracker を SteamVR 上で以下に割り当て  
