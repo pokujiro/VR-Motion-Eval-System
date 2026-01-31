@@ -1,176 +1,213 @@
-# SystemOverview.md  
+# SystemOverview.md
+
+（システム全体概要・設計方針）
 
 ---
 
 ## 1. システム概要
 
-本プロジェクトは、  
-**Meta Quest 3 + VIVE Ultimate Tracker** を用いた  
-**全身動作学習支援システム**である。
+本システムは、VR環境においてユーザの全身動作を取得・再生・評価し、
+お手本動作との差分を視覚的・数値的にフィードバックする
+**動作学習支援システム**である。
 
-VR空間内でユーザの動作を取得・再生・評価し、  
-お手本動作との差分を **視覚的・数値的にフィードバック**することを目的とする。
+本プロジェクトでは以下を重視して設計を行っている。
 
-本システムは、  
-- 卒業論文発表に耐える再現性  
-- 実機環境でのデバッグ容易性    
-
-を重視して設計されている。
-
----
-
-## 2. 想定利用環境
-
-### ハードウェア
-
-- HMD：Meta Quest 3（PC VR / Quest Link）
-  - Head / LeftHand / RightHand
-- トラッカー：VIVE Ultimate Tracker
-  - Waist / LeftFoot / RightFoot
-- PC：Windows（GPU搭載）
-
-### ソフトウェア
-
-- Unity：2022.3 LTS
-- XR：OpenXR + SteamVR Runtime
-- Input：Unity Input System
-- IK：RootMotion FinalIK（VRIK）
-- Version Control：Git（GitHub）
+* 実機環境での再現性
+* 実時間でのフィードバック
+* 体格差を考慮した公平な比較
+* 卒業研究として説明可能な構造
+* 後から機能追加・修正しやすい設計
 
 ---
 
-## 3. システム設計方針（重要）
+## 2. システム全体構成
 
-### 3.1 責務分離
+システムは以下の責務単位で構成される。
 
-本システムは、以下の考え方に基づき構成される。
+```
+SYSTEM
+└─ SystemRoot
+   ├─ CalibrationService
+   ├─ （将来）StateMachine
+   ├─ （将来）RecordingService
+   ├─ （将来）PlaybackService
+   └─ （将来）EvaluationService
+```
 
-- **入力取得**
-- **IK制御**
-- **キャリブレーション**
-- **記録・再生**
-- **評価**
-- **可視化**
-
-を明確に分離し、  
-1スクリプト1責務を原則とする。
+各コンポーネントは **単一責務** を原則とし、
+互いに直接依存しない構造を目指す。
 
 ---
 
-### 3.2 Inspector依存の最小化
+## 3. SystemRoot の役割
 
-- Scene / Prefab での Inspector 設定は最小限に抑える
-- 数値パラメータは ScriptableObject に集約
-- 実行時状態はコード側で管理する
+### 3.1 SystemRoot とは
+
+SystemRoot は、
+**システム全体の起点となる管理オブジェクト**である。
+
+主な役割は以下の通り。
+
+* 各 Service の参照元
+* 実行状態の集約（将来的に StateMachine を内包）
+* Inspector 設定の集中管理
+
+---
+
+### 3.2 設計方針
+
+* Scene 内で SystemRoot は必ず 1 つだけ存在する
+* 外部スクリプトが直接 Service を探さない
+* 依存関係は「SystemRoot → Service」の一方向とする
+
+---
+
+## 4. CalibrationService の役割
+
+### 4.1 目的
+
+CalibrationService は、
+**ユーザの体格情報を取得し、IK（VRIK）に反映する処理**を担当する。
+
+具体的には以下を行う。
+
+* Tポーズ時の入力 Transform 取得
+* 身長スケールの算出
+* 腕長・脚長の補正係数算出
+* 計算結果を VRIK に即時反映
+
+---
+
+### 4.2 なぜ Service として分離するのか
+
+キャリブレーション処理は、
+
+* 入力（トラッカー）
+* IK設定
+* UI表示
+* 状態管理
+
+と複数の要素にまたがる。
+
+これを 1 スクリプトに集約すると、
+
+* 処理の見通しが悪くなる
+* 修正時に副作用が起きやすくなる
+* 卒論での説明が困難になる
+
+そのため、本システムでは
+**Calibration を明確な Service として独立させる設計**を採用している。
+
+---
+
+## 5. 入力・IK・表示の分離
+
+本システムでは、以下の役割分担を厳密に守る。
+
+| 要素                 | 責務                         |
+| ------------------ | -------------------------- |
+| XR / TRACKERS      | 実デバイスの位置・回転取得              |
+| VrikBinder         | 入力 Transform を IK ターゲットに転送 |
+| VRIK               | 全身姿勢の計算                    |
+| CalibrationService | 体格補正パラメータの算出               |
+| UI                 | 操作説明・状態表示                  |
+
+この分離により、
+
+* どこで値が変わるか追いやすい
+* デバッグが容易
+* 機能追加時の影響範囲が限定される
+
+---
+
+## 6. Inspector 依存を最小化する方針
+
+### 6.1 Inspector 依存とは
+
+Inspector 依存とは、
+
+* 多数のスクリプトで個別に参照設定が必要
+* Scene を開くたびに設定確認が必要
+* 設定漏れが実行時エラーになる
+
+といった状態を指す。
+
+---
+
+### 6.2 本システムでの対策
+
+* Inspector 設定は SystemRoot に集約
+* Service は SystemRoot 経由で参照される
+* 実行時に null チェックを行い、即座に検知する
 
 これにより、
 
-- 環境差による破綻を防止
-- AIエージェントによる自動修正を容易化
-- 再現性の高い実験構成を維持
-
-する。
+* Scene 再利用性が高い
+* 設定ミスを初期段階で発見できる
+* 他人（将来の自分含む）が理解しやすい
 
 ---
 
-### 3.3 設計
+## 7. 状態遷移（将来拡張）
 
-本プロジェクトは、
+現段階では未実装だが、
+将来的には以下の状態遷移を想定している。
 
-- Sceneは最小構成
-- State Machine による進行管理
-- Docs/ による設計の明文化
-
-を必須とする。
-
----
-
-## 4. システム構成（論理）
-
-```text
-SystemRoot
-├─ StateMachine
-├─ InputService
-├─ CalibrationService
-├─ TrackerRecordingService
-├─ TrackerPlaybackService
-├─ EvaluationService
-├─ VisualizationService
-├─ SaveLoadService
-└─ DebugHUD
 ```
-
----
-
-## 5. 状態遷移（State Machine）
-
-```text
 Idle
-↓
+ ↓
 Calibration
-↓
+ ↓
 Ready
-↓
+ ↓
 Recording
-↓
+ ↓
 ImmediateReplay
-↓
+ ↓
 Evaluation
-↓
-Ready / Idle
 ```
 
-### 状態の役割
-
-| State | 内容 |
-|------|------|
-| Idle | 初期待機 |
-| Calibration | Tポーズによる体格補正 |
-| Ready | 記録準備完了 |
-| Recording | 動作記録 |
-| ImmediateReplay | 直前動作の再生 |
-| Evaluation | 誤差評価と可視化 |
+StateMachine は SystemRoot の管理下に置き、
+Service の実行可否を制御する予定である。
 
 ---
 
-## 6. 現在実装済み機能
+## 8. デバッグと再現性
 
-- トラッカー位置・回転取得（OpenXR / Input System）
-- 6点（Head / Hands / Waist / Feet）の Transform 入力
-- VRIKターゲットへのリアルタイム追従
-- Tポーズによる身長・腕・脚キャリブレーション
-- キャリブレーション結果の即時反映
+* DebugHUD により現在状態を可視化
+* ログに依存しない実機確認を重視
+* トラッカー未接続・参照欠落は即座に検知
 
----
-
-## 7. 可視化・デバッグ方針
-
-- 実行中の状態は Debug HUD に常時表示
-- ログに依存せず「見て分かる」構成を採用
-- 評価重み・待ち時間・現在フレームなどを可視化
-
-これにより、  
-実機実験中のトラブルシュートと論文説明の両立を行う。
+これにより、
+**実験環境特有の不安定さに対して再現性を確保**する。
 
 ---
 
-## 8. 本ドキュメントの位置づけ
+## 9. 本設計の意義（卒論向け）
 
-本ファイルは、
+本システムは、
 
-- **システム全体の地図**
-- **開発で迷わないための基準点**
-- **論文執筆時の設計説明の下書き**
+* 責務分離
+* 状態管理
+* 実機前提の設計
 
-として機能する。
+を明確に意識した構造を採用しており、
 
-詳細は以下を参照：
+「なぜこの構成にしたのか」
+「どこを修正すれば拡張できるのか」
 
-- Docs/EnvironmentSetup.md  
-- Docs/SceneSetup.md  
-- Docs/InputActions.md  
-- Docs/Calibration.md  
-- Docs/Conventions.md  
+を論理的に説明できる点に特徴がある。
 
 ---
+
+## 10. まとめ
+
+* SystemRoot を中心とした管理構造
+* CalibrationService を独立した責務として定義
+* 入力・IK・UI を明確に分離
+* 実験・評価・拡張を見据えた設計
+
+本ドキュメントは、
+本システム全体の **設計の地図** として位置付けられる。
+
 
