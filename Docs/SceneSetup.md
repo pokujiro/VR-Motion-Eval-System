@@ -1,191 +1,239 @@
-# SceneSetup.md  
-## シーン構成およびセットアップ手順
+# SceneSetup.md
+
+（シーン構成・セットアップ手順）
 
 ---
 
-## 1. 本ドキュメントの目的
+## 1. 対象シーン
 
-本ドキュメントは，本プロジェクトにおける **実験用Unityシーンの構成** を明確化し，  
-第三者が **同一条件でシーンを再構築・検証できること** を目的とする。
+本システムの動作確認および開発は、以下のシーンを基準として行う。
 
-特に以下を重視する：
+* シーン名：`01_Playground.unity`
+* 目的：
 
-- シーン単体で動作確認が可能であること  
-- トラッカー入力・IK・キャリブレーションの責務が明確であること  
-- Inspector 設定の属人化を防ぐこと  
+  * トラッカー入力の確認
+  * IK（VRIK）による全身追従
+  * キャリブレーション動作の検証
+  * 今後の機能追加の基盤
 
----
-
-## 2. 使用シーン一覧
-
-| シーン名 | 用途 |
-|---|---|
-| `00_TrackerDebug.unity` | トラッカー・HMD・コントローラの入力確認用 |
-| `01_Playground.unity` | 実験・評価のメインシーン |
-
-本ドキュメントでは **`01_Playground.unity`** を基準として説明する。
+本シーンは **「1シーンで全機能が確認できる最小構成」** とする。
 
 ---
 
-## 3. シーン全体構成（Hierarchy 概要）
+## 2. ヒエラルキー全体構成
 
-```test
+```
 01_Playground
-├─ SystemRoot
-│ ├─ StateMachine
-│ ├─ InputService
-│ ├─ CalibrationService
-│ ├─ TrackerRecordingService
-│ └─ VisualizationService
+├─ Directional Light
 │
-├─ XR Origin (Action-based)
-│ ├─ Camera Offset
-│ │ └─ Main Camera (HMD)
-│ ├─ LeftHand Controller
-│ └─ RightHand Controller
+├─ SYSTEM
+│   ├─ SystemRoot
+│   │   └─ CalibrationService
+│   └─ DebugHUD
 │
-├─ TrackerInputs
-│ ├─ WaistTracker
-│ ├─ LeftFootTracker
-│ └─ RightFootTracker
+├─ XR
+│   ├─ XR Interaction Manager
+│   ├─ Input Action Manager
+│   ├─ XR Origin (XR Rig)
+│   └─ EventSystem
 │
-├─ LearnerAvatar
-│ ├─ Animator (Humanoid)
-│ └─ VRIK
+├─ TRACKERS
+│   └─ UltimateTrackerInputs
 │
-├─ RigTargets
-│ ├─ HeadTarget
-│ ├─ PelvisTarget
-│ ├─ LeftHandTarget
-│ ├─ RightHandTarget
-│ ├─ LeftFootTarget
-│ └─ RightFootTarget
+├─ UI
+│   └─ BoardRoot
 │
-└─ UI
-└─ CalibrationBoard
+├─ AVATARS
+│   └─ LearnerAvatar
+│
+└─ IK
+    ├─ VrikBinder
+    └─ RigTargets
 ```
 
 ---
 
-## 4. 各オブジェクトの役割
+## 3. SYSTEM グループ
 
-### 4.1 SystemRoot
+### 3.1 SystemRoot
 
-- システム全体の起点となるオブジェクト
-- 各 Service（入力・キャリブレーション・記録・可視化など）を集約
-- Inspector での設定は **原則ここに集約** する
+**役割**
 
----
+* システム全体の起点
+* 状態管理（将来的に StateMachine を内包）
+* 各 Service の参照元
 
-### 4.2 XR Origin (Action-based)
+**原則**
 
-- Meta Quest 3（PC VR / SteamVR）用の標準リグ
-- 以下の Transform を入力として使用する：
-  - Head：`Main Camera`
-  - LeftHand：`LeftHand Controller`
-  - RightHand：`RightHand Controller`
+* Inspector 設定は SystemRoot に集約する
+* 他のスクリプトは SystemRoot 経由で参照される
 
 ---
 
-### 4.3 TrackerInputs
+### 3.2 CalibrationService
 
-- VIVE Ultimate Tracker の Transform 入力をまとめた親オブジェクト
-- 各トラッカーは Input System / OpenXR 経由で Pose を取得し，
-  対応する GameObject に反映される
+**役割**
 
-| オブジェクト | 対応部位 |
-|---|---|
-| WaistTracker | 腰 |
-| LeftFootTracker | 左足 |
-| RightFootTracker | 右足 |
+* Tポーズによるキャリブレーション処理
+* 身長・腕長・脚長スケールの算出
+* VRIK へのキャリブ結果反映
 
----
+**設計意図**
 
-### 4.4 LearnerAvatar
-
-- 学習者を表す Humanoid アバター
-- 必須コンポーネント：
-  - `Animator`（Humanoid 設定済み）
-  - `VRIK`（RootMotion FinalIK）
-
-アバター自体は直接トラッカーを参照せず，  
-**RigTargets を介して IK 駆動** される。
+* キャリブレーションは「一時的な処理」ではなく
+  **明確な Service（責務）**として分離する
+* 入力 Transform や IK 設定への直接依存を避け、
+  将来的な拡張・置換を容易にする
 
 ---
 
-### 4.5 RigTargets
+### 3.3 DebugHUD
 
-- IK 用のターゲット Transform 群
-- 重要：**アバターの子オブジェクトにはしない**
-  - ワールド座標系でトラッカー入力をそのまま反映するため
+**役割**
 
-| Target | 対応入力 |
-|---|---|
-| HeadTarget | HMD |
-| PelvisTarget | Waist Tracker |
-| LeftHandTarget | Left Controller |
-| RightHandTarget | Right Controller |
-| LeftFootTarget | Left Foot Tracker |
-| RightFootTarget | Right Foot Tracker |
+* 実行中の状態確認用 HUD
+* 現在の State / Tracker 接続状況 / キャリブ値の可視化
+
+**方針**
+
+* ログに依存しない
+* 実機検証時に即座に状態を把握できることを優先する
 
 ---
 
-### 4.6 UI（CalibrationBoard）
+## 4. XR グループ
 
-- キャリブレーション時の指示・結果表示用UI
-- カメラ追従／ワールド固定のどちらも選択可能
-- キャリブレーション状態を明示的にユーザへ提示する目的で使用
+### 4.1 XR Origin (XR Rig)
 
----
+**役割**
 
-## 5. トラッカー → IK のデータフロー
-```text
-[ Tracker / HMD / Controller Transform ]
-↓
-VrikTrackerBinder
-↓
-RigTargets (6点)
-↓
-VRIK
-↓
-Humanoid Avatar
-```
+* HMD およびコントローラのトラッキング
+* Head / LeftHand / RightHand の入力 Transform 提供
 
+**使用要素**
 
-- Binder は **入力TransformとIKターゲットの対応関係を一元管理** する
-- キャリブレーション後も Binder は毎フレーム追従を行う
+* Main Camera：Head 入力として使用
+* Left Controller / Right Controller：手入力として使用
 
 ---
 
-## 6. キャリブレーションとの関係
+### 4.2 Input Action Manager
 
-- Tポーズ時に以下を確定する：
-  - 身長スケール
-  - 腕長倍率
-  - 脚長倍率
-- キャリブレーション後は **RigTargets の追従のみで姿勢が再現** される
-- 詳細は `Docs/Calibration.md` を参照
+**役割**
+
+* Input System の Action を有効化
+* トラッカーおよびコントローラ入力を統合管理
 
 ---
 
-## 7. 設計上の注意点
+## 5. TRACKERS グループ
 
-- シーンは **単体で Play 可能** であること
-- Inspector での参照切れが起きない構成にする
-- トラッカー未接続時はエラー表示または実行停止することが望ましい
+### 5.1 UltimateTrackerInputs
+
+**役割**
+
+* VIVE Ultimate Tracker の入力受け口
+* Waist / LeftFoot / RightFoot の Transform を管理
+
+**設計方針**
+
+* SteamVR 側で事前に役割（Waist / Foot 等）を割り当てる
+* Unity 側では「役割が確定した Transform」として扱う
+* トラッカー識別ロジックを Unity 内に持ち込まない
 
 ---
 
-## 8. 今後の拡張予定
+## 6. IK グループ
 
-- お手本アバターの追加（半透明表示）
-- 即時リプレイ用アバターの追加
-- 評価結果の時系列可視化
+### 6.1 RigTargets
 
-これらは本シーン構成を崩さずに追加可能な設計となっている。
+**役割**
+
+* VRIK が参照するターゲット Transform 群
+
+**含まれるターゲット**
+
+* HeadTarget
+* LeftHandTarget
+* RightHandTarget
+* WaistTarget
+* LeftFootTarget
+* RightFootTarget
+
+**重要事項**
+
+* RigTargets はアバターの子にしない
+* ワールド空間で独立した Transform として管理する
 
 ---
 
+### 6.2 VrikBinder
 
+**役割**
 
+* 入力 Transform → RigTarget への橋渡し
+* 毎フレーム、入力の position / rotation をターゲットに反映
 
+**責務分離**
+
+* 入力取得：XR / TRACKERS
+* IK 計算：VRIK
+* 接続定義：VrikBinder
+
+---
+
+## 7. AVATARS グループ
+
+### 7.1 LearnerAvatar
+
+**構成**
+
+* Humanoid アバター
+* Animator コンポーネント
+* VRIK コンポーネント
+
+**役割**
+
+* 学習者の動作を全身で再現
+* キャリブレーション結果を反映した動作表示
+
+---
+
+## 8. UI グループ
+
+### 8.1 BoardRoot
+
+**役割**
+
+* キャリブレーション時の説明表示
+* 状態遷移時のガイド表示
+
+**仕様**
+
+* カメラ追従 or 固定位置表示を切替可能
+* キャリブレーション中の操作指示を明示する
+
+---
+
+## 9. 設計上の注意点
+
+* Scene 内で **役割が重複する GameObject を作らない**
+* 「Input → Binder → IK → Avatar」の流れを崩さない
+* 一時的なデバッグ用オブジェクトは `_Debug` プレフィックスを付与する
+
+---
+
+## 10. このシーンの位置づけ
+
+* 本シーンは **開発・検証用の基準シーン**
+* 実験用・評価用シーンは将来的に別途作成する
+* AIによる機能追加・修正は、原則このシーンを基点に行う
+
+---
+
+### 補足
+
+この SceneSetup.md は、
+**「後から見た自分」「指導教員」「第三者」が
+Scene を開いた瞬間に全体構造を理解できること**
+を目的としている。
