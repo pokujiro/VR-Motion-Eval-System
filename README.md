@@ -144,6 +144,3 @@ Assets/Scenes/_Dev/01_Playground.unity
 
 本 README は **プロジェクト全体の入口**としての役割を持ち、
 設計意図・実装詳細は Docs 以下に分離しています。
-
-
-どちらに進みますか？
